@@ -20,7 +20,6 @@ from AppKit import (
     NSScreen,
     NSStatusBar,
     NSTextField,
-    NSClickGestureRecognizer,
     NSVariableStatusItemLength,
     NSWindowCollectionBehaviorCanJoinAllSpaces,
     NSWindowCollectionBehaviorFullScreenAuxiliary,
@@ -143,8 +142,6 @@ class Pill:
         self.hit.setTarget_(self.delegate)
         self.hit.setAction_("talk:")
         self.window.contentView().addSubview_(self.hit)
-        click = NSClickGestureRecognizer.alloc().initWithTarget_action_(self.delegate, "talk:")
-        self.window.contentView().addGestureRecognizer_(click)
 
         self.window.contentView().setWantsLayer_(True)
         self.window.orderFrontRegardless()

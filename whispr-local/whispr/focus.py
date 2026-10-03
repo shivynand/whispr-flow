@@ -1,8 +1,7 @@
-"""Remember the app you were typing in, so a click on the pill does not steal the paste."""
+"""Track the last non-Whispr application so the pill never becomes the target."""
 
 from __future__ import annotations
 
-import subprocess
 import threading
 import time
 
@@ -22,6 +21,7 @@ class FocusTracker:
     def __init__(self) -> None:
         self.bundle_id = ""
         self.name = ""
+        self._lock = threading.Lock()
         self._stop = threading.Event()
 
     def start(self) -> None:
@@ -30,44 +30,30 @@ class FocusTracker:
     def stop(self) -> None:
         self._stop.set()
 
+    def snapshot(self) -> tuple[str, str]:
+        with self._lock:
+            return self.bundle_id, self.name
+
     def _loop(self) -> None:
         while not self._stop.is_set():
             bundle, name = _frontmost()
             if bundle and bundle.lower() not in _IGNORE and "python" not in bundle.lower():
-                self.bundle_id = bundle
-                self.name = name
-            time.sleep(0.4)
+                with self._lock:
+                    self.bundle_id = bundle
+                    self.name = name
+            time.sleep(0.2)
 
 
 def _frontmost() -> tuple[str, str]:
-    # lsappinfo does not need Accessibility. System Events does, and that is what just failed.
     try:
-        front = subprocess.run(
-            ["lsappinfo", "front"],
-            capture_output=True,
-            text=True,
-            timeout=1,
-            check=False,
-        ).stdout.strip()
-        if not front:
+        from AppKit import NSWorkspace
+
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        if app is None:
             return "", ""
-        info = subprocess.run(
-            ["lsappinfo", "info", "-only", "bundleid", "-only", "name", front],
-            capture_output=True,
-            text=True,
-            timeout=1,
-            check=False,
-        ).stdout
-    except (OSError, subprocess.TimeoutExpired):
+        bundle = app.bundleIdentifier() or ""
+        name = app.localizedName() or ""
+        return bundle, name
+    except Exception as exc:
+        print(f"[focus] could not inspect frontmost app: {exc}")
         return "", ""
-    bundle = _field(info, "bundleid")
-    name = _field(info, "name")
-    return bundle, name
-
-
-def _field(info: str, key: str) -> str:
-    for line in info.splitlines():
-        if f'"{key}"=' in line or f"{key}=" in line:
-            value = line.split("=", 1)[1].strip().strip('"')
-            return value
-    return ""
