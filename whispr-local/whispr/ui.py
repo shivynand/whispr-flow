@@ -20,7 +20,6 @@ from AppKit import (
     NSScreen,
     NSStatusBar,
     NSTextField,
-    NSClickGestureRecognizer,
     NSVariableStatusItemLength,
     NSWindowCollectionBehaviorCanJoinAllSpaces,
     NSWindowCollectionBehaviorFullScreenAuxiliary,
