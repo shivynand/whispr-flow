@@ -1,9 +1,8 @@
-"""Microphone capture. Audio stays in memory; nothing is written unless asked."""
+"""Thread-safe microphone capture; audio stays in memory."""
 
 from __future__ import annotations
 
 import threading
-from typing import Optional
 
 import numpy as np
 
@@ -19,41 +18,59 @@ class Recorder:
         import sounddevice as sd
 
         with self._lock:
+            if self._stream is not None:
+                raise RuntimeError("recording is already active")
             self._frames = []
 
-            def callback(indata, frames, time_info, status) -> None:  # noqa: ANN001
-                if status:
-                    print(f"[mic] {status}")
-                self._frames.append(indata.copy())
+        def callback(indata, frames, time_info, status) -> None:
+            if status:
+                print(f"[mic] {status}")
+            with self._lock:
+                if self._stream is not None:
+                    self._frames.append(indata.copy())
 
-            self._stream = sd.InputStream(
-                samplerate=self.sample_rate,
-                channels=1,
-                dtype="float32",
-                callback=callback,
-            )
-            self._stream.start()
+        stream = sd.InputStream(
+            samplerate=self.sample_rate,
+            channels=1,
+            dtype="float32",
+            callback=callback,
+        )
+        try:
+            stream.start()
+        except Exception:
+            stream.close()
+            raise
+
+        with self._lock:
+            self._stream = stream
 
     def snapshot(self) -> np.ndarray:
         with self._lock:
-            if not self._frames:
-                return np.zeros(0, dtype=np.float32)
-            return np.concatenate(self._frames, axis=0).reshape(-1)
+            frames = list(self._frames)
+        if not frames:
+            return np.zeros(0, dtype=np.float32)
+        return np.concatenate(frames, axis=0).reshape(-1)
 
     def stop(self) -> np.ndarray:
         with self._lock:
             stream = self._stream
             self._stream = None
+
         if stream is not None:
             stream.stop()
             stream.close()
-        if not self._frames:
+
+        with self._lock:
+            frames = list(self._frames)
+
+        if not frames:
             return np.zeros(0, dtype=np.float32)
-        return np.concatenate(self._frames, axis=0).reshape(-1)
+        return np.concatenate(frames, axis=0).reshape(-1)
 
     @property
     def is_recording(self) -> bool:
-        return self._stream is not None
+        with self._lock:
+            return self._stream is not None
 
 
 def seconds(audio: np.ndarray, sample_rate: int) -> float:
