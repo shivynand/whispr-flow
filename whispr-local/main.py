@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 import sys
 import threading
@@ -33,6 +32,7 @@ class App:
         self._toggle_on = False
         self._target_bundle = ""
         self._target_name = ""
+        self._permission_issue = ""
         self._status = None
 
     def set_status_handler(self, handler) -> None:
@@ -156,7 +156,7 @@ class App:
             insert = text if text.endswith((" ", "\n")) else text + " "
             self.status("transcribing", "Pasting…")
             try:
-                ok = paste_text(
+                result = paste_text(
                     insert,
                     bundle_id=target_bundle,
                     restore_clipboard=self.config.restore_clipboard,
@@ -165,12 +165,17 @@ class App:
                 self.status("error", "Paste failed — see app log")
                 print(f"[paste] unexpected error: {exc}")
                 return
-            if ok:
+            if result == "pasted":
                 self.status("ready", f"Sent to {target_name}")
                 print(f"[done] {text}")
+            elif result == "copied":
+                self.status("error", "Copied; allow Python in Accessibility")
+                print("[paste] text is copied; allow the Python executable in Accessibility to enable auto-paste")
+            elif result == "no_target":
+                self.status("error", "Copied. Click the text field first")
             else:
-                self.status("error", "Copied to clipboard — paste was blocked")
-                print("[paste] target activation or keyboard injection failed")
+                self.status("error", "Clipboard copy failed")
+                print("[paste] could not write the transcript to the clipboard")
         finally:
             self._busy.release()
 
@@ -200,7 +205,6 @@ def main() -> None:
     parser.add_argument("--hotkey", help="Override the hotkey for this run")
     parser.add_argument("--model", help="Whisper model size, e.g. tiny.en, base.en, small.en")
     parser.add_argument("--no-ui", action="store_true", help="Terminal only, no floating pill")
-    parser.add_argument("--daemon-ui", action="store_true", help="Run backend for the TypeScript app UI")
     parser.add_argument("--demo-cleanup", metavar="TEXT", help="Run cleanup on TEXT and exit")
     args = parser.parse_args()
 
@@ -222,38 +226,6 @@ def main() -> None:
 
     app = App(config)
     app.focus.start()
-
-    if args.daemon_ui:
-        app.set_status_handler(lambda state, detail: _emit_status(state, detail))
-        def boot_backend() -> None:
-            try:
-                app.load_model()
-                app.status("ready", "Hold Space to dictate")
-            except Exception as exc:
-                app.status("error", "Model failed to load")
-                print(f"[whisper] {exc}", file=sys.stderr)
-
-        def run_hotkey() -> None:
-            try:
-                from whispr.hotkey import HoldToTalk
-                HoldToTalk(config.hotkey, app.on_start, app.on_stop, toggle=config.toggle).run()
-            except Exception as exc:
-                app.status("error", "Keyboard permission needed")
-                print(f"[hotkey] {exc}", file=sys.stderr)
-
-        threading.Thread(target=boot_backend, daemon=True).start()
-        threading.Thread(target=run_hotkey, daemon=True).start()
-        for line in sys.stdin:
-            try:
-                command = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if command.get("type") == "toggle":
-                app._toggle()
-            elif command.get("type") == "quit":
-                app.focus.stop()
-                break
-        return
 
     if args.no_ui:
         app.load_model()
@@ -284,13 +256,31 @@ def main() -> None:
     def boot() -> None:
         try:
             app.load_model()
-            app.status("ready", "Hold Space to dictate")
+            if app._permission_issue:
+                app.status("error", app._permission_issue)
+            else:
+                app.status("ready", "Hold Space to dictate")
         except Exception as exc:
             app.status("error", "Model failed to load")
             print(f"[whisper] {exc}")
 
     def hotkey() -> None:
         try:
+            from ApplicationServices import AXIsProcessTrusted
+            from Quartz import CGPreflightListenEventAccess, CGRequestListenEventAccess
+
+            if not AXIsProcessTrusted():
+                app._permission_issue = "Allow Python in Accessibility for Space and paste"
+                app.status("error", app._permission_issue)
+                print(f"[permission] enable Whispr Local and {binary} under Privacy & Security → Accessibility")
+                return
+            if not CGPreflightListenEventAccess():
+                CGRequestListenEventAccess()
+                app._permission_issue = "Allow Python in Input Monitoring"
+                app.status("error", app._permission_issue)
+                print(f"[permission] enable Whispr Local and {binary} under Privacy & Security → Input Monitoring")
+                return
+
             from whispr.hotkey import HoldToTalk
 
             HoldToTalk(
@@ -300,6 +290,8 @@ def main() -> None:
                 toggle=config.toggle,
             ).run()
         except Exception as exc:
+            app._permission_issue = "Hotkey unavailable — check Settings"
+            app.status("error", app._permission_issue)
             print(f"[hotkey] not available: {exc}")
 
     threading.Thread(target=boot, daemon=True).start()
@@ -316,13 +308,10 @@ def _log_to_file() -> None:
     try:
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         handle = LOG_PATH.open("a", encoding="utf-8")
+        sys.stdout = handle
         sys.stderr = handle
     except OSError:
         pass
-
-
-def _emit_status(state: str, detail: str) -> None:
-    print(json.dumps({"type": "status", "state": state, "detail": detail}), flush=True)
 
 
 def _alert(title: str, message: str) -> None:

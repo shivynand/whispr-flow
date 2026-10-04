@@ -47,6 +47,12 @@ class Delegate(NSObject):
     def talk_(self, _sender) -> None:
         self.owner.on_toggle()
 
+    def accessibility_(self, _sender) -> None:
+        self.owner.open_privacy_settings("Privacy_Accessibility")
+
+    def inputMonitoring_(self, _sender) -> None:
+        self.owner.open_privacy_settings("Privacy_ListenEvent")
+
     def quit_(self, _sender) -> None:
         self.owner.on_quit()
         NSApplication.sharedApplication().terminate_(None)
@@ -74,6 +80,8 @@ class Pill:
         for title, action in (
             ("Show / hide", "togglePanel:"),
             ("Start / stop", "talk:"),
+            ("Accessibility settings…", "accessibility:"),
+            ("Input Monitoring settings…", "inputMonitoring:"),
             ("Quit", "quit:"),
         ):
             item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, "")
@@ -153,11 +161,17 @@ class Pill:
         else:
             self.window.orderFrontRegardless()
 
+    def open_privacy_settings(self, pane: str) -> None:
+        import subprocess
+
+        url = f"x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?{pane}"
+        subprocess.Popen(["open", url])
+
     def set_status(self, state: str, detail: str) -> None:
         AppHelper.callAfter(self._apply, state, detail)
 
     def _apply(self, state: str, detail: str) -> None:
-        self.label.setStringValue_(detail[:36])
+        self.label.setStringValue_(detail[:52])
         if state == "listening":
             self.dot.setTextColor_(NSColor.colorWithCalibratedRed_green_blue_alpha_(1, 0.32, 0.28, 1))
             self.hint.setStringValue_("release")
@@ -168,7 +182,7 @@ class Pill:
             self.status.button().setTitle_("… Whispr")
         elif state == "error":
             self.dot.setTextColor_(NSColor.colorWithCalibratedRed_green_blue_alpha_(1, 0.45, 0.4, 1))
-            self.hint.setStringValue_("retry")
+            self.hint.setStringValue_("check Settings")
             self.status.button().setTitle_("Whispr")
         else:
             self.dot.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(0.55, 1))

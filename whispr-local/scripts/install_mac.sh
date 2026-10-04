@@ -11,9 +11,8 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 pip install -r requirements.txt
-npm_config_cache="${TMPDIR:-/tmp}/whispr-npm-cache" npm install
 
-bash "$ROOT/scripts/package_mac.sh"
+bash "$ROOT/scripts/make_app.sh"
 
 mkdir -p "$HOME/Applications"
 rm -rf "$HOME/Applications/Whispr Local.app"
@@ -49,6 +48,9 @@ echo
 echo "One permission is still required or it cannot type into Mail, Slack, or a browser:"
 echo "  System Settings → Privacy & Security → Accessibility → enable Whispr Local"
 echo "If holding Space does not start dictation, also enable Whispr Local under Input Monitoring."
+echo "If macOS still blocks keyboard/paste events, add this Python executable to both lists:"
+echo "  $ROOT/.venv/bin/python"
 echo "Then quit and reopen the app."
 open "$HOME/Applications/Whispr Local.app"
 open "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility"
+open "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ListenEvent"
