@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
 import threading
@@ -38,7 +39,7 @@ class App:
         self._status = handler
 
     def status(self, state: str, detail: str) -> None:
-        print(f"[{state}] {detail}")
+        print(f"[{state}] {detail}", file=sys.stderr)
         if self._status is not None:
             self._status(state, detail)
 
@@ -63,7 +64,7 @@ class App:
             self._end()
 
     def _toggle(self) -> None:
-        if self._toggle_on:
+        if self._recording:
             self._toggle_on = False
             self._end()
         else:
@@ -142,23 +143,28 @@ class App:
         try:
             try:
                 raw = self.transcriber.transcribe(audio)
+                text = clean(raw, final=True).strip()
             except Exception as exc:
                 self.status("error", "Transcription failed — try again")
-                print(f"[whisper] {exc}")
+                print(f"[dictation] transcription or cleanup failed: {exc}")
                 return
 
-            text = clean(raw, final=True).strip()
             if not text:
                 self.status("ready", "Nothing heard")
                 return
 
             insert = text if text.endswith((" ", "\n")) else text + " "
             self.status("transcribing", "Pasting…")
-            ok = paste_text(
-                insert,
-                bundle_id=target_bundle,
-                restore_clipboard=self.config.restore_clipboard,
-            )
+            try:
+                ok = paste_text(
+                    insert,
+                    bundle_id=target_bundle,
+                    restore_clipboard=self.config.restore_clipboard,
+                )
+            except Exception as exc:
+                self.status("error", "Paste failed — see app log")
+                print(f"[paste] unexpected error: {exc}")
+                return
             if ok:
                 self.status("ready", f"Sent to {target_name}")
                 print(f"[done] {text}")
@@ -194,6 +200,7 @@ def main() -> None:
     parser.add_argument("--hotkey", help="Override the hotkey for this run")
     parser.add_argument("--model", help="Whisper model size, e.g. tiny.en, base.en, small.en")
     parser.add_argument("--no-ui", action="store_true", help="Terminal only, no floating pill")
+    parser.add_argument("--daemon-ui", action="store_true", help="Run backend for the TypeScript app UI")
     parser.add_argument("--demo-cleanup", metavar="TEXT", help="Run cleanup on TEXT and exit")
     args = parser.parse_args()
 
@@ -216,9 +223,41 @@ def main() -> None:
     app = App(config)
     app.focus.start()
 
+    if args.daemon_ui:
+        app.set_status_handler(lambda state, detail: _emit_status(state, detail))
+        def boot_backend() -> None:
+            try:
+                app.load_model()
+                app.status("ready", "Hold Space to dictate")
+            except Exception as exc:
+                app.status("error", "Model failed to load")
+                print(f"[whisper] {exc}", file=sys.stderr)
+
+        def run_hotkey() -> None:
+            try:
+                from whispr.hotkey import HoldToTalk
+                HoldToTalk(config.hotkey, app.on_start, app.on_stop, toggle=config.toggle).run()
+            except Exception as exc:
+                app.status("error", "Keyboard permission needed")
+                print(f"[hotkey] {exc}", file=sys.stderr)
+
+        threading.Thread(target=boot_backend, daemon=True).start()
+        threading.Thread(target=run_hotkey, daemon=True).start()
+        for line in sys.stdin:
+            try:
+                command = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if command.get("type") == "toggle":
+                app._toggle()
+            elif command.get("type") == "quit":
+                app.focus.stop()
+                break
+        return
+
     if args.no_ui:
         app.load_model()
-        app.status("ready", "Hold the key")
+        app.status("ready", "Hold Space to dictate")
         from whispr.hotkey import HoldToTalk
 
         try:
@@ -245,7 +284,7 @@ def main() -> None:
     def boot() -> None:
         try:
             app.load_model()
-            app.status("ready", "Click to dictate")
+            app.status("ready", "Hold Space to dictate")
         except Exception as exc:
             app.status("error", "Model failed to load")
             print(f"[whisper] {exc}")
@@ -277,10 +316,13 @@ def _log_to_file() -> None:
     try:
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         handle = LOG_PATH.open("a", encoding="utf-8")
-        sys.stdout = handle
         sys.stderr = handle
     except OSError:
         pass
+
+
+def _emit_status(state: str, detail: str) -> None:
+    print(json.dumps({"type": "status", "state": state, "detail": detail}), flush=True)
 
 
 def _alert(title: str, message: str) -> None:

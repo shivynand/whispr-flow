@@ -1,0 +1,8 @@
+.venv/
+node_modules/
+dist/
+release/
+Whispr Local.app/
+__pycache__/
+*.py[cod]
+.DS_Store

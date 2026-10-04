@@ -1,0 +1,19 @@
+{
+  "name": "whispr-local",
+  "version": "0.3.0",
+  "private": true,
+  "description": "TypeScript macOS interface for the local Whispr dictation backend",
+  "main": "dist/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "node scripts/build_ui.mjs",
+    "package:mac": "bash scripts/package_mac.sh"
+  },
+  "devDependencies": {
+    "@electron/packager": "^18.3.6",
+    "@types/node": "^24.10.0",
+    "electron": "^44.5.1",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  }
+}

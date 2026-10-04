@@ -19,7 +19,7 @@ def config_path() -> Path:
 
 @dataclass
 class Config:
-    hotkey: str = "alt_r"
+    hotkey: str = "space"
     toggle: bool = False
     model: str = "base.en"
     language: str = "en"
@@ -40,6 +40,13 @@ class Config:
             return cfg
         data = json.loads(path.read_text())
         known = {field: data[field] for field in cls.__dataclass_fields__ if field in data}
+        # Right Option was the previous default; migrate it to the new
+        # hold-Space default while preserving other explicit hotkey choices.
+        if known.get("hotkey") == "alt_r":
+            known["hotkey"] = "space"
+            cfg = cls(**known)
+            cfg.save()
+            return cfg
         return cls(**known)
 
     def save(self) -> None:

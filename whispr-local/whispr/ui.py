@@ -126,7 +126,7 @@ class Pill:
         self.window.contentView().addSubview_(self.label)
 
         self.hint = NSTextField.alloc().initWithFrame_(NSMakeRect(250, 12, 96, 20))
-        self.hint.setStringValue_("click")
+        self.hint.setStringValue_("hold space")
         self.hint.setAlignment_(1)
         self.hint.setBezeled_(False)
         self.hint.setDrawsBackground_(False)
@@ -160,19 +160,19 @@ class Pill:
         self.label.setStringValue_(detail[:36])
         if state == "listening":
             self.dot.setTextColor_(NSColor.colorWithCalibratedRed_green_blue_alpha_(1, 0.32, 0.28, 1))
-            self.hint.setStringValue_("stop")
+            self.hint.setStringValue_("release")
             self.status.button().setTitle_("● Whispr")
         elif state == "transcribing":
             self.dot.setTextColor_(NSColor.colorWithCalibratedRed_green_blue_alpha_(1, 0.78, 0.35, 1))
-            self.hint.setStringValue_("…")
+            self.hint.setStringValue_("working")
             self.status.button().setTitle_("… Whispr")
         elif state == "error":
             self.dot.setTextColor_(NSColor.colorWithCalibratedRed_green_blue_alpha_(1, 0.45, 0.4, 1))
-            self.hint.setStringValue_("fix")
+            self.hint.setStringValue_("retry")
             self.status.button().setTitle_("Whispr")
         else:
             self.dot.setTextColor_(NSColor.colorWithCalibratedWhite_alpha_(0.55, 1))
-            self.hint.setStringValue_("click")
+            self.hint.setStringValue_("hold space")
             self.status.button().setTitle_("Whispr")
         origin = self.window.frame().origin
         self.config.window_x = int(origin.x)
